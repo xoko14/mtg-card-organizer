@@ -219,6 +219,10 @@ impl Application for App {
                 let json = fs::read_to_string(file).unwrap();
 
                 self.decks = serde_json::from_str(&json).unwrap();
+                self.search_result = Vec::new();
+                self.image_cache = HashMap::new();
+                self.card_index = Vec::new();
+                self.search_text = String::new();
 
                 for deck in &self.decks {
                     self.card_index
