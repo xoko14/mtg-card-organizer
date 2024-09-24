@@ -1,14 +1,17 @@
-#![windows_subsystem = "windows"]
+//#![windows_subsystem = "windows"]
 
-use app::App;
 use iced::{Application, Settings};
+use relm4::RelmApp;
+use crate::app::AppModel;
 
-mod app;
+mod app2;
 mod models;
 mod mtg;
+mod app;
+mod components;
 
 fn main() {
-    let settings = Settings::with_flags(());
-
-    App::run(settings).unwrap();
+    let app = RelmApp::new("com.shoudev.MtgCardOrganizer");
+    relm4_icons::initialize_icons();
+    app.run::<AppModel>(());
 }
