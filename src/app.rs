@@ -1,9 +1,6 @@
-use relm4::{gtk, ComponentParts, ComponentSender, SimpleComponent};
-use relm4::adw::{ApplicationWindow, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, ToolbarView, ViewStack, ViewStackPage, ViewSwitcher};
-use relm4::adw::ffi::AdwNavigationView;
-use relm4::adw::glib::clone;
-use relm4::adw::glib::ffi::g_ascii_tolower;
-use relm4::adw::prelude::{ActionableExt, ActionableExtManual, AdwApplicationWindowExt, BoxExt, ButtonExt, GtkWindowExt};
+use relm4::{gtk, ComponentParts, ComponentSender, RelmWidgetExt, SimpleComponent};
+use relm4::adw::{ApplicationWindow, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, ToolbarView, ViewStack, ViewSwitcher, Dialog};
+use relm4::adw::prelude::*;
 use relm4::factory::{DynamicIndex, FactoryVecDeque};
 use relm4::gtk::Orientation;
 use relm4_icons::icon_names;
@@ -11,7 +8,8 @@ use crate::components::card::{CardModel, CardOutput};
 use crate::models::Card;
 
 pub struct AppModel {
-    query_results: FactoryVecDeque<CardModel>
+    query_results: FactoryVecDeque<CardModel>,
+    is_deck_dialog_open: bool,
 }
 #[derive(Debug)]
 pub enum AppInput {
@@ -20,23 +18,107 @@ pub enum AppInput {
     Test,
 }
 
-pub struct AppWidgets {
-
-}
-
-
+#[relm4::component(pub)]
 impl SimpleComponent for AppModel {
     type Input = AppInput;
     type Output = ();
     type Init = ();
-    type Root = ApplicationWindow;
-    type Widgets = AppWidgets;
 
-    fn init_root() -> Self::Root {
-        ApplicationWindow::builder()
-            .default_width(1000)
-            .default_height(800)
-            .build()
+    view!{
+        #[root]
+        ApplicationWindow{
+            set_default_width: 1000,
+            set_default_height: 800,
+
+            #[wrap(Some)]
+            set_content = &NavigationView::builder().build(){
+                set_animate_transitions: true,
+
+                NavigationPage{
+                    ToolbarView{
+                        add_top_bar = &HeaderBar::builder().build(){
+                            #[wrap(Some)]
+                            set_title_widget = &ViewSwitcher{
+                                set_stack: Some(&main_view_stack)
+                            },
+                            pack_start = &gtk::Button::builder().build(){
+                                set_action_name: Some("navigation.push"),
+                                set_action_target: Some("create_deck"),
+                                set_icon_name: icon_names::PLUS_SQUARE_OUTLINE
+                            }
+                        },
+                        #[wrap(Some)]
+                        set_content: main_view_stack = &ViewStack{
+                            add = &NavigationSplitView::builder().build(){
+
+                            } -> {
+                                set_name: Some("decks"),
+                                set_title: Some("Decks"),
+                                set_icon_name: Some(icon_names::MAILBOX),
+                            },
+                            add: search_widget = &gtk::Box{
+                                set_orientation: Orientation::Vertical,
+                                gtk::SearchBar{
+                                    #[wrap(Some)]
+                                    set_child: cards_searchentry = &gtk::SearchEntry{
+                                        set_hexpand:true,
+                                    },
+                                    connect_entry: &cards_searchentry,
+                                    set_key_capture_widget: Some(&search_widget),
+                                    set_search_mode: true,
+                                },
+                                gtk::ScrolledWindow{
+                                    set_child: Some(model.query_results.widget()),
+                                    set_vexpand: true,
+                                },
+                            } -> {
+                                set_name: Some("cards"),
+                                set_title: Some("Cards"),
+                                set_icon_name: Some(icon_names::SMARTCARD),
+                            }
+                        },
+                    }
+                },
+
+                NavigationPage{
+                    set_title: "Create deck",
+                    set_tag: Some("create_deck"),
+                    #[name = "add_deck_page"]
+                    ToolbarView{
+                        add_top_bar = &HeaderBar::builder().build(){
+
+                        },
+
+                        gtk::Box{
+                            set_orientation: Orientation::Vertical,
+                            set_spacing: 8,
+                            set_margin_all: 8,
+
+                            gtk::Entry{
+                                set_placeholder_text: Some("Deck name")
+                            },
+
+                            gtk::ScrolledWindow{
+                                set_vexpand: true,
+                                gtk::TextView{
+                                },
+                            },
+                            gtk::Button{
+                                set_label: "Analyze deck",
+                            },
+                        }
+                    }
+                },
+
+            },
+        },
+        
+        deck_dialog = Dialog{
+            #[track(self.is_deck_dialog_open)]
+            present: Some(&add_deck_page),
+            #[track(!self.is_deck_dialog_open)]
+            close: ()
+        }
     }
 
     fn init(init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
@@ -46,89 +128,11 @@ impl SimpleComponent for AppModel {
                 .forward(sender.input_sender(), |output| match output{
                     CardOutput::Add(idx) => AppInput::AddCard(idx),
                     CardOutput::Sub(idx) => AppInput::AddCard(idx),
-                })
+                }),
+            is_deck_dialog_open: false,
         };
 
-        let header = HeaderBar::builder()
-            .build();
-
-        let navigation_view = NavigationView::builder()
-            .animate_transitions(true)
-            .build();
-        let view_stack = ViewStack::builder()
-            .build();
-
-        let header_switcher= ViewSwitcher::builder()
-            .stack(&view_stack)
-            .build();
-        header.set_title_widget(Some(&header_switcher));
-        let btn_add_card = gtk::Button::builder()
-            .icon_name(icon_names::PLUS_SQUARE_OUTLINE)
-            .build();
-        btn_add_card.set_action_name(Some("navigation.push"));
-        btn_add_card.set_action_target(Some("create_deck"));
-        header.pack_start(&btn_add_card);
-        let toolbar_view = ToolbarView::builder()
-            .build();
-        toolbar_view.add_top_bar(&header);
-        toolbar_view.set_content(Some(&view_stack));
-        let main_page = NavigationPage::builder()
-            .child(&toolbar_view)
-            .build();
-        navigation_view.add(&main_page);
-
-        let create_deck_box = gtk::Box::builder()
-            .build();
-        let create_deck_toolbar = ToolbarView::builder()
-            .build();
-        let create_deck_navigation = HeaderBar::builder()
-            .build();
-        create_deck_toolbar.add_top_bar(&create_deck_navigation);
-        create_deck_toolbar.set_content(Some(&create_deck_box));
-        let create_deck_page = NavigationPage::builder()
-            .tag("create_deck")
-            .child(&create_deck_toolbar)
-            .build();
-        navigation_view.add(&create_deck_page);
-
-
-        let decks_split = NavigationSplitView::builder()
-            .build();
-        let decks_page = view_stack.add(&decks_split);
-        decks_page.set_name(Some("decks"));
-        decks_page.set_title(Some("Decks"));
-        decks_page.set_icon_name(Some(icon_names::MAILBOX));
-
-        let cards_content = gtk::Box::builder()
-            .orientation(Orientation::Vertical)
-            .hexpand(true)
-            .build();
-        let cards_page = view_stack.add(&cards_content);
-        cards_page.set_name(Some("cards"));
-        cards_page.set_title(Some("Cards"));
-        cards_page.set_icon_name(Some(icon_names::SMARTCARD));
-
-        let searchentry = gtk::SearchEntry::builder()
-            .hexpand(true)
-            .build();
-        let searchbar = gtk::SearchBar::builder()
-            .build();
-        searchbar.connect_entry(&searchentry);
-        searchbar.set_child(Some(&searchentry));
-        searchbar.set_key_capture_widget(Some(&cards_content));
-        searchbar.set_search_mode(true);
-        cards_content.append(&searchbar);
-        let scrollable = gtk::ScrolledWindow::builder()
-            .child(model.query_results.widget())
-            .hexpand(true)
-            .vexpand(true)
-            .build();
-        cards_content.append(&scrollable);
-
-        root.set_content(Some(&navigation_view));
-
-        let widgets = Self::Widgets {};
-
+        let widgets = view_output!();
 
         ComponentParts {model, widgets}
     }
@@ -143,6 +147,4 @@ impl SimpleComponent for AppModel {
         };
     }
 
-    fn update_view(&self, widgets: &mut Self::Widgets, sender: ComponentSender<Self>) {
-    }
 }
