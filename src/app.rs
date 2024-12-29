@@ -1,28 +1,40 @@
-use relm4::{gtk, ComponentParts, ComponentSender, RelmWidgetExt, SimpleComponent};
+use relm4::{gtk, Component, ComponentParts, ComponentSender, RelmWidgetExt, SimpleComponent};
 use relm4::adw::{ApplicationWindow, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, ToolbarView, ViewStack, ViewSwitcher, Dialog};
 use relm4::adw::prelude::*;
+use relm4::binding::{ConnectBindingExt, StringBinding};
 use relm4::factory::{DynamicIndex, FactoryVecDeque};
 use relm4::gtk::Orientation;
 use relm4_icons::icon_names;
 use crate::components::card::{CardModel, CardOutput};
-use crate::models::Card;
+use crate::models::{Card, CardInDeck};
+use crate::mtg;
+use crate::mtg::CardErrorInsight;
 
 pub struct AppModel {
     query_results: FactoryVecDeque<CardModel>,
     is_deck_dialog_open: bool,
+    card_list_raw: String,
 }
 #[derive(Debug)]
 pub enum AppInput {
     AddCard(DynamicIndex),
     SubCard(DynamicIndex),
+    ChangedDecklist(String),
+    AnalyzeDeck,
     Test,
 }
 
+#[derive(Debug)]
+pub enum CommandMsg{
+    DeckProcessResult(Vec<CardInDeck>, Vec<CardErrorInsight>)
+}
+
 #[relm4::component(pub)]
-impl SimpleComponent for AppModel {
+impl Component for AppModel {
     type Input = AppInput;
     type Output = ();
     type Init = ();
+    type CommandOutput = CommandMsg;
 
     view!{
         #[root]
@@ -83,8 +95,8 @@ impl SimpleComponent for AppModel {
                 NavigationPage{
                     set_title: "Create deck",
                     set_tag: Some("create_deck"),
-                    #[name = "add_deck_page"]
-                    ToolbarView{
+                    #[wrap(Some)]
+                    set_child: toolbar_new_deck = &ToolbarView{
                         add_top_bar = &HeaderBar::builder().build(){
 
                         },
@@ -95,16 +107,25 @@ impl SimpleComponent for AppModel {
                             set_margin_all: 8,
 
                             gtk::Entry{
-                                set_placeholder_text: Some("Deck name")
+                                set_placeholder_text: Some("Deck name"),
                             },
 
                             gtk::ScrolledWindow{
                                 set_vexpand: true,
+                                #[name = "decklist_text"]
                                 gtk::TextView{
+                                    #[wrap(Some)]
+                                    set_buffer = &gtk::TextBuffer{
+                                        connect_changed[sender] => move |buffer| {
+                                            let (start, end) = buffer.bounds();
+                                            let text = buffer.text(&start, &end, false).as_str().to_owned();
+                                            sender.input(AppInput::ChangedDecklist(text))
+                                        } 
+                                    }
                                 },
                             },
                             gtk::Button{
-                                set_label: "Analyze deck",
+                                set_label: "Analyze deck"
                             },
                         }
                     }
@@ -113,12 +134,12 @@ impl SimpleComponent for AppModel {
             },
         },
         
-        deck_dialog = Dialog{
-            #[track(self.is_deck_dialog_open)]
-            present: Some(&add_deck_page),
-            #[track(!self.is_deck_dialog_open)]
-            close: ()
-        }
+        //deck_dialog = Dialog{
+        //    #[track(self.is_deck_dialog_open)]
+        //    present: Some(&toolbar_new_deck),
+        //    #[track(!self.is_deck_dialog_open)]
+        //    close: ()
+        //}
     }
 
     fn init(init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
@@ -130,6 +151,7 @@ impl SimpleComponent for AppModel {
                     CardOutput::Sub(idx) => AppInput::AddCard(idx),
                 }),
             is_deck_dialog_open: false,
+            card_list_raw: String::new(),
         };
 
         let widgets = view_output!();
@@ -137,13 +159,22 @@ impl SimpleComponent for AppModel {
         ComponentParts {model, widgets}
     }
 
-    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match message {
             AppInput::AddCard(_) => {}
             AppInput::SubCard(_) => {}
             AppInput::Test => {
                 self.query_results.guard().push_front(Card{name: "test".to_string(), img: "test".to_string()});
             }
+            AppInput::AnalyzeDeck => {
+                let decklist = self.card_list_raw.clone();
+                
+                sender.oneshot_command(async move {
+                    let (cards, errors) = mtg::process_decklist(decklist).await;
+                    CommandMsg::DeckProcessResult(cards, errors)
+                })
+            }
+            _ => {}
         };
     }
 
