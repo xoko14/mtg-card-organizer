@@ -4,11 +4,11 @@ use relm4::adw::prelude::*;
 use relm4::binding::{ConnectBindingExt, StringBinding};
 use relm4::factory::{DynamicIndex, FactoryVecDeque};
 use relm4::gtk::Orientation;
-use relm4_icons::icon_names;
 use crate::components::card::{CardModel, CardOutput};
 use crate::models::{Card, CardInDeck};
 use crate::mtg;
 use crate::mtg::CardErrorInsight;
+use crate::icon_names;
 
 pub struct AppModel {
     query_results: FactoryVecDeque<CardModel>,
