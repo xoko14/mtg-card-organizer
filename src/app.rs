@@ -118,14 +118,15 @@ impl Component for AppModel {
                                     set_buffer = &gtk::TextBuffer{
                                         connect_changed[sender] => move |buffer| {
                                             let (start, end) = buffer.bounds();
-                                            let text = buffer.text(&start, &end, false).as_str().to_owned();
+                                            let text = buffer.text(&start, &end, true).as_str().to_string();
                                             sender.input(AppInput::ChangedDecklist(text))
-                                        } 
+                                        }
                                     }
                                 },
                             },
                             gtk::Button{
-                                set_label: "Analyze deck"
+                                set_label: "Analyze deck",
+                                connect_clicked => AppInput::AnalyzeDeck,
                             },
                         }
                     }
@@ -166,16 +167,30 @@ impl Component for AppModel {
             AppInput::Test => {
                 self.query_results.guard().push_front(Card{name: "test".to_string(), img: "test".to_string()});
             }
+            AppInput::ChangedDecklist(decklist) => {
+                self.card_list_raw = decklist;
+            }
             AppInput::AnalyzeDeck => {
                 let decklist = self.card_list_raw.clone();
-                
+
                 sender.oneshot_command(async move {
                     let (cards, errors) = mtg::process_decklist(decklist).await;
                     CommandMsg::DeckProcessResult(cards, errors)
                 })
-            }
+            },
             _ => {}
         };
+    }
+
+    fn update_cmd(&mut self, message: Self::CommandOutput, sender: ComponentSender<Self>, root: &Self::Root) {
+        match message {
+            CommandMsg::DeckProcessResult(cards, errors) => {
+                let total = cards.iter().fold(0, |prev, next| {next.quantity+prev});
+                println!("Total processed cards: {}", total);
+                println!("Deck process result: {:?}", errors);
+            }
+            _ => {}
+        }
     }
 
 }
