@@ -1,10 +1,10 @@
-use relm4::{gtk, Component, ComponentParts, ComponentSender, RelmWidgetExt, SimpleComponent};
+use relm4::{gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmWidgetExt};
 use relm4::adw::{ApplicationWindow, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, ToolbarView, ViewStack, ViewSwitcher, Dialog};
 use relm4::adw::prelude::*;
-use relm4::binding::{ConnectBindingExt, StringBinding};
 use relm4::factory::{DynamicIndex, FactoryVecDeque};
-use relm4::gtk::Orientation;
+use relm4::gtk::{Orientation, Widget};
 use crate::components::card::{CardModel, CardOutput};
+use crate::components::analyze_dialog::{AnalyzeDialog, AnalyzeDialogInput};
 use crate::models::{Card, CardInDeck};
 use crate::mtg;
 use crate::mtg::CardErrorInsight;
@@ -14,6 +14,7 @@ pub struct AppModel {
     query_results: FactoryVecDeque<CardModel>,
     is_deck_dialog_open: bool,
     card_list_raw: String,
+    analyze_dialog_controller: Controller<AnalyzeDialog>,
 }
 #[derive(Debug)]
 pub enum AppInput {
@@ -43,7 +44,7 @@ impl Component for AppModel {
             set_default_height: 800,
 
             #[wrap(Some)]
-            set_content = &NavigationView::builder().build(){
+            set_content: view = &NavigationView::builder().build(){
                 set_animate_transitions: true,
 
                 NavigationPage{
@@ -100,7 +101,6 @@ impl Component for AppModel {
                         add_top_bar = &HeaderBar::builder().build(){
 
                         },
-
                         gtk::Box{
                             set_orientation: Orientation::Vertical,
                             set_spacing: 8,
@@ -135,12 +135,9 @@ impl Component for AppModel {
             },
         },
         
-        //deck_dialog = Dialog{
-        //    #[track(self.is_deck_dialog_open)]
-        //    present: Some(&toolbar_new_deck),
-        //    #[track(!self.is_deck_dialog_open)]
-        //    close: ()
-        //}
+        #[local_ref]
+        analyze_dialog -> Dialog{
+        }
     }
 
     fn init(init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
@@ -153,7 +150,12 @@ impl Component for AppModel {
                 }),
             is_deck_dialog_open: false,
             card_list_raw: String::new(),
+            analyze_dialog_controller: AnalyzeDialog::builder()
+                .launch(())
+                .detach(),
         };
+        
+        let analyze_dialog = model.analyze_dialog_controller.widget();
 
         let widgets = view_output!();
 
@@ -188,8 +190,8 @@ impl Component for AppModel {
                 let total = cards.iter().fold(0, |prev, next| {next.quantity+prev});
                 println!("Total processed cards: {}", total);
                 println!("Deck process result: {:?}", errors);
+                self.analyze_dialog_controller.emit(AnalyzeDialogInput::Open);
             }
-            _ => {}
         }
     }
 
