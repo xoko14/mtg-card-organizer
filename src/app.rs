@@ -4,7 +4,7 @@ use relm4::adw::prelude::*;
 use relm4::factory::{DynamicIndex, FactoryVecDeque};
 use relm4::gtk::{Orientation, Widget};
 use crate::components::card::{CardModel, CardOutput};
-use crate::components::analyze_dialog::{AnalyzeDialog, AnalyzeDialogInput};
+use crate::components::analyze_dialog::{AnalyzeDialog, AnalyzeDialogInput, AnalyzeDialogOutput};
 use crate::models::{Card, CardInDeck};
 use crate::mtg;
 use crate::mtg::CardErrorInsight;
@@ -23,6 +23,7 @@ pub enum AppInput {
     ChangedDecklist(String),
     AnalyzeDeck,
     Test,
+    SaveDecklist(Vec<CardInDeck>),
 }
 
 #[derive(Debug)]
@@ -126,7 +127,10 @@ impl Component for AppModel {
                             },
                             gtk::Button{
                                 set_label: "Analyze deck",
-                                connect_clicked => AppInput::AnalyzeDeck,
+                                connect_clicked[analyze_dialog, view, sender] => move |_btn|{
+                                    analyze_dialog.present(Some(&view));
+                                    sender.input(AppInput::AnalyzeDeck);
+                                },
                             },
                         }
                     }
@@ -152,7 +156,9 @@ impl Component for AppModel {
             card_list_raw: String::new(),
             analyze_dialog_controller: AnalyzeDialog::builder()
                 .launch(())
-                .detach(),
+                .forward(sender.input_sender(), |out| match out {
+                    AnalyzeDialogOutput::SaveDeck(cards) => AppInput::SaveDecklist(cards),
+                }),
         };
         
         let analyze_dialog = model.analyze_dialog_controller.widget();
@@ -180,17 +186,16 @@ impl Component for AppModel {
                     CommandMsg::DeckProcessResult(cards, errors)
                 })
             },
-            _ => {}
+            AppInput::SaveDecklist(cards) => {
+                
+            }
         };
     }
 
     fn update_cmd(&mut self, message: Self::CommandOutput, sender: ComponentSender<Self>, root: &Self::Root) {
         match message {
             CommandMsg::DeckProcessResult(cards, errors) => {
-                let total = cards.iter().fold(0, |prev, next| {next.quantity+prev});
-                println!("Total processed cards: {}", total);
-                println!("Deck process result: {:?}", errors);
-                self.analyze_dialog_controller.emit(AnalyzeDialogInput::Open);
+                self.analyze_dialog_controller.emit(AnalyzeDialogInput::SetCards(cards));
             }
         }
     }

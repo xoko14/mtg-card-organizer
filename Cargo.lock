@@ -3018,6 +3018,7 @@ checksum = "fb3d67f2982131c5e6047af4278d8fe750266767e57b58bc15f2e11e190eef36"
 dependencies = [
  "once_cell",
  "relm4",
+ "reqwest",
  "tracker",
 ]
 
