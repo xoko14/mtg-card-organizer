@@ -1,20 +1,26 @@
-use relm4::{gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmWidgetExt};
-use relm4::adw::{ApplicationWindow, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, ToolbarView, ViewStack, ViewSwitcher, Dialog};
-use relm4::adw::prelude::*;
-use relm4::factory::{DynamicIndex, FactoryVecDeque};
-use relm4::gtk::{Orientation, Widget};
-use crate::components::card::{CardModel, CardOutput};
 use crate::components::analyze_dialog::{AnalyzeDialog, AnalyzeDialogInput, AnalyzeDialogOutput};
+use crate::components::card::{CardModel, CardOutput};
+use crate::icon_names;
 use crate::models::{Card, CardInDeck};
 use crate::mtg;
 use crate::mtg::CardErrorInsight;
-use crate::icon_names;
+use relm4::adw::prelude::*;
+use relm4::adw::{
+    ApplicationWindow, Dialog, HeaderBar, NavigationPage, NavigationSplitView, NavigationView,
+    ToolbarView, ViewStack, ViewSwitcher,
+};
+use relm4::factory::{DynamicIndex, FactoryVecDeque};
+use relm4::gtk::{Orientation, Widget};
+use relm4::{
+    gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmWidgetExt,
+};
 
 pub struct AppModel {
     query_results: FactoryVecDeque<CardModel>,
     is_deck_dialog_open: bool,
     card_list_raw: String,
     analyze_dialog_controller: Controller<AnalyzeDialog>,
+    creating_deck_name: String,
 }
 #[derive(Debug)]
 pub enum AppInput {
@@ -24,11 +30,12 @@ pub enum AppInput {
     AnalyzeDeck,
     Test,
     SaveDecklist(Vec<CardInDeck>),
+    ChangeCreatingDeckName(String),
 }
 
 #[derive(Debug)]
-pub enum CommandMsg{
-    DeckProcessResult(Vec<CardInDeck>, Vec<CardErrorInsight>)
+pub enum CommandMsg {
+    DeckProcessResult(Vec<CardInDeck>, Vec<CardErrorInsight>),
 }
 
 #[relm4::component(pub)]
@@ -38,7 +45,7 @@ impl Component for AppModel {
     type Init = ();
     type CommandOutput = CommandMsg;
 
-    view!{
+    view! {
         #[root]
         ApplicationWindow{
             set_default_width: 1000,
@@ -109,6 +116,9 @@ impl Component for AppModel {
 
                             gtk::Entry{
                                 set_placeholder_text: Some("Deck name"),
+                                connect_changed[sender] => move |entry|{
+                                    sender.input(AppInput::ChangeCreatingDeckName(entry.text().as_str().to_string()));
+                                }
                             },
 
                             gtk::ScrolledWindow{
@@ -138,34 +148,40 @@ impl Component for AppModel {
 
             },
         },
-        
+
         #[local_ref]
         analyze_dialog -> Dialog{
         }
     }
 
-    fn init(init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(
+        init: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
         let model = AppModel {
             query_results: FactoryVecDeque::builder()
                 .launch(CardModel::default_parent())
-                .forward(sender.input_sender(), |output| match output{
+                .forward(sender.input_sender(), |output| match output {
                     CardOutput::Add(idx) => AppInput::AddCard(idx),
                     CardOutput::Sub(idx) => AppInput::AddCard(idx),
                 }),
             is_deck_dialog_open: false,
             card_list_raw: String::new(),
-            analyze_dialog_controller: AnalyzeDialog::builder()
-                .launch(())
-                .forward(sender.input_sender(), |out| match out {
+            analyze_dialog_controller: AnalyzeDialog::builder().launch(()).forward(
+                sender.input_sender(),
+                |out| match out {
                     AnalyzeDialogOutput::SaveDeck(cards) => AppInput::SaveDecklist(cards),
-                }),
+                },
+            ),
+            creating_deck_name: String::new(),
         };
-        
+
         let analyze_dialog = model.analyze_dialog_controller.widget();
 
         let widgets = view_output!();
 
-        ComponentParts {model, widgets}
+        ComponentParts { model, widgets }
     }
 
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
@@ -173,7 +189,10 @@ impl Component for AppModel {
             AppInput::AddCard(_) => {}
             AppInput::SubCard(_) => {}
             AppInput::Test => {
-                self.query_results.guard().push_front(Card{name: "test".to_string(), img: "test".to_string()});
+                self.query_results.guard().push_front(Card {
+                    name: "test".to_string(),
+                    img: "test".to_string(),
+                });
             }
             AppInput::ChangedDecklist(decklist) => {
                 self.card_list_raw = decklist;
@@ -185,19 +204,25 @@ impl Component for AppModel {
                     let (cards, errors) = mtg::process_decklist(decklist).await;
                     CommandMsg::DeckProcessResult(cards, errors)
                 })
-            },
-            AppInput::SaveDecklist(cards) => {
-                
+            }
+            AppInput::SaveDecklist(cards) => {}
+            AppInput::ChangeCreatingDeckName(name) => {
+                self.creating_deck_name = name;
             }
         };
     }
 
-    fn update_cmd(&mut self, message: Self::CommandOutput, sender: ComponentSender<Self>, root: &Self::Root) {
+    fn update_cmd(
+        &mut self,
+        message: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        root: &Self::Root,
+    ) {
         match message {
             CommandMsg::DeckProcessResult(cards, errors) => {
-                self.analyze_dialog_controller.emit(AnalyzeDialogInput::SetCards(cards));
+                self.analyze_dialog_controller
+                    .emit(AnalyzeDialogInput::SetCards(cards));
             }
         }
     }
-
 }

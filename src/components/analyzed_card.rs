@@ -1,9 +1,9 @@
-use relm4::factory::{FactoryComponent, FactoryView};
-use relm4::{adw, gtk, Component, ComponentController, Controller, FactorySender, RelmWidgetExt};
-use relm4::adw::prelude::{BoxExt, PreferencesRowExt, WidgetExt};
-use relm4::gtk::prelude::EditableExt;
-use relm4_components::web_image::WebImage;
 use crate::models::CardInDeck;
+use relm4::adw::prelude::{BoxExt, PreferencesRowExt, WidgetExt};
+use relm4::factory::{FactoryComponent, FactoryView};
+use relm4::gtk::prelude::{AdjustmentExt, EditableExt};
+use relm4::{adw, gtk, Component, ComponentController, Controller, FactorySender, RelmWidgetExt};
+use relm4_components::web_image::WebImage;
 
 #[derive(Debug)]
 pub struct AnalyzedCard {
@@ -12,7 +12,9 @@ pub struct AnalyzedCard {
 }
 
 #[derive(Debug)]
-pub enum AnalyzedCardInput {}
+pub enum AnalyzedCardInput {
+    ChangedValue(f64),
+}
 #[derive(Debug)]
 pub enum AnalyzedCardOutput {}
 
@@ -23,28 +25,36 @@ impl FactoryComponent for AnalyzedCard {
     type Output = AnalyzedCardOutput;
     type CommandOutput = ();
     type ParentWidget = gtk::Box;
-    
-    view!{
+
+    view! {
         #[root]
         gtk::Box {
             set_align: gtk::Align::Fill,
             #[local_ref]
             card_image -> gtk::Box{
-                set_hexpand: true,
-                set_vexpand: true,
-                set_width_request: 109,
+                //set_hexpand: true,
+                //set_vexpand: true,
+                //set_width_request: 109,
             },
             adw::PreferencesGroup{
                 adw::EntryRow{
                     set_hexpand: true,
                     set_title: "Card name",
                     set_text: &self.card.card.name,
-                    
+
                 },
                 adw::SpinRow{
                     set_title: "Qty",
-                    set_value: self.card.quantity as f64,
-                    set_range: (0.0, 9999.0)
+                    connect_changed[sender] => move |row| {
+                        sender.input(AnalyzedCardInput::ChangedValue(row.value()))
+                    } @quantity_spin_signal,
+                    #[wrap(Some)]
+                    set_adjustment = &gtk::Adjustment{
+                        set_value: self.card.quantity as f64,
+                        set_lower: 0f64,
+                        set_upper: 9999f64,
+                        set_step_increment: 1f64,
+                    }
                 }
             }
         }
@@ -52,20 +62,31 @@ impl FactoryComponent for AnalyzedCard {
 
     fn init_model(init: Self::Init, index: &Self::Index, sender: FactorySender<Self>) -> Self {
         let img = init.card.img.clone();
-        
-        AnalyzedCard{
+
+        AnalyzedCard {
             card: init,
-            card_image: WebImage::builder()
-                .launch(img)
-                .detach()
+            card_image: WebImage::builder().launch(img).detach(),
         }
     }
 
-    fn init_widgets(&mut self, index: &Self::Index, root: Self::Root, returned_widget: &<Self::ParentWidget as FactoryView>::ReturnedWidget, sender: FactorySender<Self>) -> Self::Widgets {
+    fn init_widgets(
+        &mut self,
+        index: &Self::Index,
+        root: Self::Root,
+        returned_widget: &<Self::ParentWidget as FactoryView>::ReturnedWidget,
+        sender: FactorySender<Self>,
+    ) -> Self::Widgets {
         let card_image = self.card_image.widget();
-        
+
         let widgets = view_output!();
         widgets
     }
-    
+
+    fn update(&mut self, message: Self::Input, sender: FactorySender<Self>) {
+        match message {
+            AnalyzedCardInput::ChangedValue(value) => {
+                self.card.quantity = value as i32;
+            }
+        }
+    }
 }
